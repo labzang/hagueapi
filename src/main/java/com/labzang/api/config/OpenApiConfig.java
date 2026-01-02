@@ -13,8 +13,17 @@ import java.util.List;
 @Configuration
 public class OpenApiConfig {
 
+    private String getApiBaseUrl() {
+        String apiBaseUrl = System.getenv("API_BASE_URL");
+        if (apiBaseUrl == null || apiBaseUrl.isEmpty()) {
+            apiBaseUrl = "http://localhost:8080";
+        }
+        return apiBaseUrl;
+    }
+
     @Bean
     public OpenAPI customOpenAPI() {
+        String apiBaseUrl = getApiBaseUrl();
         return new OpenAPI()
                 .info(new Info()
                         .title("Labzang API Gateway")
@@ -32,13 +41,13 @@ public class OpenApiConfig {
                             - **MLService**: 머신러닝 및 NLP (`/api/ml/**`)
                             
                             ## 직접 접근 URL
-                            - **TransformerService Docs**: [http://localhost:9020/docs](http://localhost:9020/docs)
-                            - **MLService**: [http://localhost:9010](http://localhost:9010)
+                            - **TransformerService Docs**: 환경 변수 `TRANSFORMER_SERVICE_URL`로 설정
+                            - **MLService**: 환경 변수 `ML_SERVICE_URL`로 설정
                             
                             ## 사용 예시
                             ```bash
                             # Gateway를 통한 감성분석
-                            POST http://localhost:8080/api/transformer/koelectra/analyze
+                            POST ${API_BASE_URL}/api/transformer/koelectra/analyze
                             {
                                 "text": "이 영화는 정말 재미있어요!"
                             }
@@ -54,11 +63,8 @@ public class OpenApiConfig {
                                 .url("https://opensource.org/licenses/MIT")))
                 .servers(List.of(
                         new Server()
-                                .url("http://localhost:8080")
-                                .description("로컬 개발 서버"),
-                        new Server()
-                                .url("https://api.labzang.com")
-                                .description("프로덕션 서버")
+                                .url(apiBaseUrl)
+                                .description("API 서버")
                 ));
     }
 }

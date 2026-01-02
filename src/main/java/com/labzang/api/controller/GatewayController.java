@@ -53,7 +53,11 @@ public class GatewayController {
         transformerService.put("description", "KoELECTRA 기반 한국어 감성분석");
         transformerService.put("path", "/api/transformer/**");
         transformerService.put("port", "9020");
-        transformerService.put("docs", "http://localhost:9020/docs");
+        String transformerServiceUrl = System.getenv("TRANSFORMER_SERVICE_URL");
+        if (transformerServiceUrl == null || transformerServiceUrl.isEmpty()) {
+            transformerServiceUrl = "http://localhost:9020";
+        }
+        transformerService.put("docs", transformerServiceUrl + "/docs");
         
         Map<String, Object> mlService = new HashMap<>();
         mlService.put("name", "MLService");

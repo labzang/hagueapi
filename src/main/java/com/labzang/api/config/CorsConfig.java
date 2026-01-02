@@ -24,27 +24,42 @@ public class CorsConfig implements WebMvcConfigurer {
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
-        registry.addMapping("/**")
-                .allowedOrigins(
-                    frontendUrl,
-                    "http://localhost:3000",
-                    "http://127.0.0.1:3000"
-                )
-                .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH")
-                .allowedHeaders("*")
-                .allowCredentials(true)
-                .maxAge(3600);
+        // 환경 변수에서 추가 허용 오리진 가져오기 (쉼표로 구분)
+        String additionalOrigins = System.getenv("CORS_ALLOWED_ORIGINS");
+        
+        if (additionalOrigins != null && !additionalOrigins.isEmpty()) {
+            String[] origins = additionalOrigins.split(",");
+            registry.addMapping("/**")
+                    .allowedOrigins(origins)
+                    .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH")
+                    .allowedHeaders("*")
+                    .allowCredentials(true)
+                    .maxAge(3600);
+        } else {
+            // 기본값: FRONTEND_URL만 사용
+            registry.addMapping("/**")
+                    .allowedOrigins(frontendUrl)
+                    .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH")
+                    .allowedHeaders("*")
+                    .allowCredentials(true)
+                    .maxAge(3600);
+        }
     }
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
         
-        configuration.setAllowedOrigins(Arrays.asList(
-            frontendUrl,
-            "http://localhost:3000",
-            "http://127.0.0.1:3000"
-        ));
+        // 환경 변수에서 추가 허용 오리진 가져오기 (쉼표로 구분)
+        String additionalOrigins = System.getenv("CORS_ALLOWED_ORIGINS");
+        
+        if (additionalOrigins != null && !additionalOrigins.isEmpty()) {
+            String[] origins = additionalOrigins.split(",");
+            configuration.setAllowedOrigins(Arrays.asList(origins));
+        } else {
+            // 기본값: FRONTEND_URL만 사용
+            configuration.setAllowedOrigins(Arrays.asList(frontendUrl));
+        }
         
         configuration.setAllowedMethods(Arrays.asList(
             "GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"

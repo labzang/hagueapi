@@ -16,17 +16,19 @@ import java.time.Duration;
 /**
  * Redis 설정
  * Upstash Redis 연결 및 RedisTemplate 설정
+ * 
+ * Upstash Redis는 TLS/SSL 연결이 필수입니다.
  */
 @Configuration
 public class RedisConfig {
 
-    @Value("${UPSTASH_REDIS_HOST}")
+    @Value("${UPSTASH_REDIS_HOST:localhost}")
     private String host;
 
     @Value("${UPSTASH_REDIS_PORT:6379}")
     private int port;
 
-    @Value("${UPSTASH_REDIS_PASSWORD}")
+    @Value("${UPSTASH_REDIS_PASSWORD:}")
     private String password;
 
     @Value("${spring.data.redis.ssl.enabled:true}")
@@ -35,6 +37,10 @@ public class RedisConfig {
     @Value("${spring.data.redis.timeout:2000ms}")
     private String timeout;
 
+    /**
+     * RedisConnectionFactory 빈 생성
+     * Upstash Redis는 TLS/SSL 연결을 사용합니다.
+     */
     @Bean
     public RedisConnectionFactory redisConnectionFactory() {
         RedisStandaloneConfiguration redisConfig = new RedisStandaloneConfiguration();
@@ -56,47 +62,65 @@ public class RedisConfig {
         }
 
         LettuceConnectionFactory factory = new LettuceConnectionFactory(redisConfig, clientConfig);
+        factory.afterPropertiesSet();
 
-        System.out.println("Redis SSL 연결 활성화: " + host + ":" + port);
-
-        // 연결 테스트
-        try {
-            factory.afterPropertiesSet();
-            factory.getConnection().ping();
-            System.out.println("✅ Redis 연결 성공");
-        } catch (Exception e) {
-            System.err.println("❌ Redis 연결 실패: " + e.getMessage());
+        // 연결 정보 로깅
+        if (sslEnabled) {
+            System.out.println("✅ Upstash Redis SSL 연결 설정: " + host + ":" + port);
+        } else {
+            System.out.println("⚠️ Upstash Redis 일반 연결 설정: " + host + ":" + port);
         }
 
         return factory;
     }
 
+    /**
+     * RedisTemplate 빈 생성
+     * Key는 String으로, Value는 JSON으로 직렬화합니다.
+     */
     @Bean
     public RedisTemplate<String, Object> redisTemplate(RedisConnectionFactory connectionFactory) {
         RedisTemplate<String, Object> template = new RedisTemplate<>();
         template.setConnectionFactory(connectionFactory);
 
-        // Key-Value 직렬화 설정
+        // Key 직렬화 설정
         template.setKeySerializer(new StringRedisSerializer());
-        template.setValueSerializer(new GenericJackson2JsonRedisSerializer());
         template.setHashKeySerializer(new StringRedisSerializer());
+
+        // Value 직렬화 설정 (JSON)
+        template.setValueSerializer(new GenericJackson2JsonRedisSerializer());
         template.setHashValueSerializer(new GenericJackson2JsonRedisSerializer());
 
         template.afterPropertiesSet();
+
+        // 연결 테스트
+        try {
+            template.opsForValue().set("connection:test", "ok", 10, java.util.concurrent.TimeUnit.SECONDS);
+            System.out.println("✅ Redis 연결 성공 및 RedisTemplate 초기화 완료");
+        } catch (Exception e) {
+            System.err.println("❌ Redis 연결 실패: " + e.getMessage());
+            e.printStackTrace();
+        }
+
         return template;
     }
 
     /**
      * Duration 문자열을 밀리초로 변환
-     * 예: "2000ms" -> 2000
+     * 예: "2000ms" -> 2000, "2s" -> 2000
      */
     private long parseDuration(String duration) {
-        if (duration.endsWith("ms")) {
-            return Long.parseLong(duration.substring(0, duration.length() - 2));
-        } else if (duration.endsWith("s")) {
-            return Long.parseLong(duration.substring(0, duration.length() - 1)) * 1000;
+        if (duration == null || duration.isEmpty()) {
+            return 2000; // 기본값 2초
+        }
+
+        String trimmed = duration.trim();
+        if (trimmed.endsWith("ms")) {
+            return Long.parseLong(trimmed.substring(0, trimmed.length() - 2));
+        } else if (trimmed.endsWith("s")) {
+            return Long.parseLong(trimmed.substring(0, trimmed.length() - 1)) * 1000;
         } else {
-            return Long.parseLong(duration);
+            return Long.parseLong(trimmed);
         }
     }
 }

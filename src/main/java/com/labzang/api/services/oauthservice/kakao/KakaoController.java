@@ -92,8 +92,12 @@ public class KakaoController {
         System.out.println("Error Description: " + error_description);
         System.out.println("============================");
 
-        // 프론트엔드 콜백 URL
-        String frontendCallbackUrl = "http://localhost:3000/kakao-callback";
+        // 프론트엔드 콜백 URL (환경 변수에서 가져오거나 기본값 사용)
+        String frontendUrl = System.getenv("FRONTEND_URL");
+        if (frontendUrl == null || frontendUrl.isEmpty()) {
+            frontendUrl = "http://localhost:3000";
+        }
+        String frontendCallbackUrl = frontendUrl + "/kakao-callback";
 
         try {
             if (code != null) {
