@@ -20,13 +20,13 @@ import java.time.Duration;
 @Configuration
 public class RedisConfig {
 
-    @Value("${spring.data.redis.host}")
+    @Value("${UPSTASH_REDIS_HOST}")
     private String host;
 
-    @Value("${spring.data.redis.port}")
+    @Value("${UPSTASH_REDIS_PORT:6379}")
     private int port;
 
-    @Value("${spring.data.redis.password}")
+    @Value("${UPSTASH_REDIS_PASSWORD}")
     private String password;
 
     @Value("${spring.data.redis.ssl.enabled:true}")
@@ -56,9 +56,9 @@ public class RedisConfig {
         }
 
         LettuceConnectionFactory factory = new LettuceConnectionFactory(redisConfig, clientConfig);
-        
+
         System.out.println("Redis SSL 연결 활성화: " + host + ":" + port);
-        
+
         // 연결 테스트
         try {
             factory.afterPropertiesSet();
@@ -67,7 +67,7 @@ public class RedisConfig {
         } catch (Exception e) {
             System.err.println("❌ Redis 연결 실패: " + e.getMessage());
         }
-        
+
         return factory;
     }
 
