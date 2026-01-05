@@ -4,6 +4,7 @@ spring:
   # docker builder prune -f
   # docker build -t labzang-api .
   # docker run -p 8080:8080 labzang-api:latest
+  # 깃허브액션을 실행하기 위한 변화 12:47
 
   # 데이터베이스 설정 (Neon PostgreSQL)
   datasource:
