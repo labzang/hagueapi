@@ -1,279 +1,277 @@
-name: Build & Deploy API Gateway
+name: Build & Deploy Labzang API
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'gateway/**'
-      - '.github/workflows/build-and-deploy.yml'
-  workflow_dispatch:
+    push:
+        branches:
+            - main
+    workflow_dispatch:
 
 env:
-  DOCKER_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/api.hohyun.com
-  DOCKER_TAG: v1
+    DOCKER_IMAGE: pakjkwan/labzang-api
+    DOCKER_TAG: latest
 
 jobs:
-  build-and-push:
-    runs-on: ubuntu-latest
-    outputs:
-      image-tag: latest
+    build-and-push:
+        runs-on: ubuntu-latest
+        outputs:
+            image-tag: latest
 
-    steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
+        steps:
+            - name: Checkout source
+              uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+            - name: Set up Docker Buildx
+              uses: docker/setup-buildx-action@v3
 
-      - name: Login to DockerHub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+            - name: Login to DockerHub
+              uses: docker/login-action@v3
+              with:
+                  username: ${{ secrets.DOCKERHUB_USERNAME }}
+                  password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./gateway/Dockerfile
-          platforms: linux/amd64
-          push: true
-          tags: |
-            ${{ env.DOCKER_IMAGE }}:latest
-          cache-from: type=registry,ref=${{ env.DOCKER_IMAGE }}:buildcache
-          cache-to: type=registry,ref=${{ env.DOCKER_IMAGE }}:buildcache,mode=max
+            - name: Build and push Docker image
+              uses: docker/build-push-action@v5
+              with:
+                  context: .
+                  file: ./Dockerfile
+                  platforms: linux/amd64
+                  push: true
+                  tags: |
+                      ${{ env.DOCKER_IMAGE }}:latest
+                  cache-from: type=registry,ref=${{ env.DOCKER_IMAGE }}:buildcache
+                  cache-to: type=registry,ref=${{ env.DOCKER_IMAGE }}:buildcache,mode=max
 
-  deploy:
-    needs: build-and-push
-    runs-on: ubuntu-latest
-    if: success()
+    deploy:
+        needs: build-and-push
+        runs-on: ubuntu-latest
+        if: success()
 
-    steps:
-      - name: Deploy to EC2
-        continue-on-error: true
-        id: deploy
-        uses: appleboy/ssh-action@v1.0.0
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          port: 22
-          timeout: 120s
-          command_timeout: 15m
-          script_stop: true
-          sync: true
-          debug: false
-          use_insecure_cipher: false
-          proxy_host: ""
-          proxy_port: 0
-          script: |
-            set -e  # Exit on error
+        steps:
+            - name: Deploy to EC2
+              continue-on-error: true
+              id: deploy
+              uses: appleboy/ssh-action@v1.0.0
+              with:
+                  host: ${{ secrets.EC2_HOST }}
+                  username: ${{ secrets.EC2_USER }}
+                  key: ${{ secrets.EC2_SSH_KEY }}
+                  port: 22
+                  timeout: 120s
+                  command_timeout: 15m
+                  script_stop: true
+                  sync: true
+                  debug: false
+                  use_insecure_cipher: false
+                  proxy_host: ""
+                  proxy_port: 0
+                  script: |
+                      set -e  # Exit on error
 
-            echo "=== Starting API Gateway Docker Deployment ==="
+                      echo "=== Starting Labzang API Docker Deployment ==="
 
-            DOCKER_IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/api.hohyun.com:${{ env.DOCKER_TAG }}"
-            CONTAINER_NAME="api-gateway"
+                      DOCKER_IMAGE="${{ env.DOCKER_IMAGE }}:${{ env.DOCKER_TAG }}"
+                      CONTAINER_NAME="labzang-api"
 
-            # Docker 확인
-            echo "=== Checking Docker ==="
-            if sudo docker --version >/dev/null 2>&1; then
-              echo "✅ Docker is installed: $(sudo docker --version)"
-            else
-              echo "Installing Docker..."
-              sudo apt-get update -y
-              sudo apt-get install -y docker.io
-              sudo systemctl start docker
-              sudo systemctl enable docker
-              sleep 2
-              
-              if ! sudo docker --version >/dev/null 2>&1; then
-                echo "❌ Docker installation failed!"
-                exit 1
-              fi
-              echo "✅ Docker installed"
-            fi
-            
-            # Docker 서비스 시작
-            if ! sudo systemctl is-active --quiet docker; then
-              echo "Starting Docker service..."
-              sudo systemctl start docker
-              sleep 2
-            fi
-            
-            echo "✅ Docker service is active"
+                      # Docker 확인
+                      echo "=== Checking Docker ==="
+                      if sudo docker --version >/dev/null 2>&1; then
+                        echo "✅ Docker is installed: $(sudo docker --version)"
+                      else
+                        echo "Installing Docker..."
+                        sudo apt-get update -y
+                        sudo apt-get install -y docker.io
+                        sudo systemctl start docker
+                        sudo systemctl enable docker
+                        sleep 2
+                        
+                        if ! sudo docker --version >/dev/null 2>&1; then
+                          echo "❌ Docker installation failed!"
+                          exit 1
+                        fi
+                        echo "✅ Docker installed"
+                      fi
 
-            # Docker Hub 로그인 (sudo 사용)
-            echo "Logging in to Docker Hub..."
-            echo "${{ secrets.DOCKERHUB_TOKEN }}" | sudo docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin || true
+                      # Docker 서비스 시작
+                      if ! sudo systemctl is-active --quiet docker; then
+                        echo "Starting Docker service..."
+                        sudo systemctl start docker
+                        sleep 2
+                      fi
 
-            # 기존 컨테이너 중지 및 제거 (에러 무시)
-            echo "Cleaning up old containers..."
-            sudo docker stop $CONTAINER_NAME 2>/dev/null || echo "No running container to stop"
-            sudo docker rm $CONTAINER_NAME 2>/dev/null || echo "No container to remove"
-            echo "✅ Cleanup complete"
+                      echo "✅ Docker service is active"
 
-            # 최신 이미지 pull
-            echo "Pulling latest image: $DOCKER_IMAGE"
-            sudo docker pull $DOCKER_IMAGE
+                      # Docker Hub 로그인 (sudo 사용)
+                      echo "Logging in to Docker Hub..."
+                      echo "${{ secrets.DOCKERHUB_TOKEN }}" | sudo docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin || true
 
-            # Docker 컨테이너 실행 (GitHub Secrets에서 직접 환경 변수 전달)
-            echo "Starting Docker container with environment variables from GitHub Secrets..."
-            if sudo docker run -d \
-              --name $CONTAINER_NAME \
-              --restart unless-stopped \
-              -p 8080:8080 \
-              -e SPRING_PROFILES_ACTIVE=production \
-              -e SPRING_DATASOURCE_URL="${{ secrets.NEON_CONNECTION_STRING }}" \
-              -e SPRING_DATASOURCE_USERNAME="${{ secrets.NEON_USER }}" \
-              -e SPRING_DATASOURCE_PASSWORD="${{ secrets.NEON_PASSWORD }}" \
-              -e SPRING_DATA_REDIS_HOST="${{ secrets.UPSTASH_REDIS_HOST }}" \
-              -e SPRING_DATA_REDIS_PORT="${{ secrets.UPSTASH_REDIS_PORT }}" \
-              -e SPRING_DATA_REDIS_PASSWORD="${{ secrets.UPSTASH_REDIS_PASSWORD }}" \
-              -e JWT_SECRET="${{ secrets.JWT_SECRET }}" \
-              -e GOOGLE_CLIENT_ID="${{ secrets.GOOGLE_CLIENT_ID }}" \
-              -e GOOGLE_CLIENT_SECRET="${{ secrets.GOOGLE_CLIENT_SECRET }}" \
-              -e GOOGLE_REDIRECT_URI="${{ secrets.GOOGLE_REDIRECT_URI }}" \
-              -e NAVER_CLIENT_ID="${{ secrets.NAVER_CLIENT_ID }}" \
-              -e NAVER_CLIENT_SECRET="${{ secrets.NAVER_CLIENT_SECRET }}" \
-              -e NAVER_REDIRECT_URI="${{ secrets.NAVER_REDIRECT_URI }}" \
-              -e KAKAO_REST_API_KEY="${{ secrets.KAKAO_REST_API_KEY }}" \
-              -e KAKAO_CLIENT_SECRET="${{ secrets.KAKAO_CLIENT_SECRET }}" \
-              -e KAKAO_REDIRECT_URI="${{ secrets.KAKAO_REDIRECT_URI }}" \
+                      # 기존 컨테이너 중지 및 제거 (에러 무시)
+                      echo "Cleaning up old containers..."
+                      sudo docker stop $CONTAINER_NAME 2>/dev/null || echo "No running container to stop"
+                      sudo docker rm $CONTAINER_NAME 2>/dev/null || echo "No container to remove"
+                      echo "✅ Cleanup complete"
+
+                      # 최신 이미지 pull
+                      echo "Pulling latest image: $DOCKER_IMAGE"
+                      sudo docker pull $DOCKER_IMAGE
+
+                      # Docker 컨테이너 실행 (GitHub Secrets에서 직접 환경 변수 전달)
+                      echo "Starting Docker container with environment variables from GitHub Secrets..."
+                      if sudo docker run -d \
+                        --name $CONTAINER_NAME \
+                        --restart unless-stopped \
+                        -p 8080:8080 \
+                        -e SPRING_PROFILES_ACTIVE=production \
+                        -e SPRING_DATASOURCE_URL="${{ secrets.NEON_CONNECTION_STRING }}" \
+                        -e SPRING_DATASOURCE_USERNAME="${{ secrets.NEON_USER }}" \
+                        -e SPRING_DATASOURCE_PASSWORD="${{ secrets.NEON_PASSWORD }}" \
+                        -e SPRING_DATA_REDIS_HOST="${{ secrets.UPSTASH_REDIS_HOST }}" \
+                        -e SPRING_DATA_REDIS_PORT="${{ secrets.UPSTASH_REDIS_PORT }}" \
+                        -e SPRING_DATA_REDIS_PASSWORD="${{ secrets.UPSTASH_REDIS_PASSWORD }}" \
+                        -e JWT_SECRET="${{ secrets.JWT_SECRET }}" \
+                        -e GOOGLE_CLIENT_ID="${{ secrets.GOOGLE_CLIENT_ID }}" \
+                        -e GOOGLE_CLIENT_SECRET="${{ secrets.GOOGLE_CLIENT_SECRET }}" \
+                        -e GOOGLE_REDIRECT_URI="${{ secrets.GOOGLE_REDIRECT_URI }}" \
+                        -e NAVER_CLIENT_ID="${{ secrets.NAVER_CLIENT_ID }}" \
+                        -e NAVER_CLIENT_SECRET="${{ secrets.NAVER_CLIENT_SECRET }}" \
+                        -e NAVER_REDIRECT_URI="${{ secrets.NAVER_REDIRECT_URI }}" \
+                        -e KAKAO_REST_API_KEY="${{ secrets.KAKAO_REST_API_KEY }}" \
+                        -e KAKAO_CLIENT_SECRET="${{ secrets.KAKAO_CLIENT_SECRET }}" \
+                        -e KAKAO_REDIRECT_URI="${{ secrets.KAKAO_REDIRECT_URI }}" \
 
 
-              $DOCKER_IMAGE; then
-              echo "✅ Container started successfully"
-              CONTAINER_ID=$(sudo docker ps -q -f name=$CONTAINER_NAME)
-              echo "Container ID: $CONTAINER_ID"
-            else
-              echo "❌ Failed to start container"
-              echo "Checking for errors..."
-              sudo docker ps -a | grep $CONTAINER_NAME || true
-              sudo docker logs $CONTAINER_NAME 2>&1 | tail -20 || true
-              exit 1
-            fi
+                        $DOCKER_IMAGE; then
+                        echo "✅ Container started successfully"
+                        CONTAINER_ID=$(sudo docker ps -q -f name=$CONTAINER_NAME)
+                        echo "Container ID: $CONTAINER_ID"
+                      else
+                        echo "❌ Failed to start container"
+                        echo "Checking for errors..."
+                        sudo docker ps -a | grep $CONTAINER_NAME || true
+                        sudo docker logs $CONTAINER_NAME 2>&1 | tail -20 || true
+                        exit 1
+                      fi
 
-            # 컨테이너 상태 확인
-            echo "Waiting for container to initialize..."
-            sleep 5
-            
-            if ! sudo docker ps | grep -q $CONTAINER_NAME; then
-              echo "❌ Container failed to start!"
-              echo "=== Container Status ==="
-              sudo docker ps -a | grep $CONTAINER_NAME || true
-              echo ""
-              echo "=== Container Logs (last 50 lines) ==="
-              sudo docker logs --tail 50 $CONTAINER_NAME || true
-              exit 1
-            fi
-            
-            echo "✅ Container is running"
-            echo "=== Container Details ==="
-            sudo docker ps | grep $CONTAINER_NAME
-            echo ""
-            
-            # 컨테이너 로그 확인 (애플리케이션 시작 여부)
-            echo "=== Recent Container Logs ==="
-            sudo docker logs --tail 20 $CONTAINER_NAME || true
-            echo ""
-            
-            # 애플리케이션 시작 대기 (최대 60초)
-            # Disable exit on error for health check loop
-            set +e
-            echo "Waiting for application to start..."
-            MAX_WAIT=60
-            WAIT_INTERVAL=5
-            ELAPSED=0
-            APP_READY=false
-            
-            while [ $ELAPSED -lt $MAX_WAIT ]; do
-              if curl -s -f -m 3 http://localhost:8080/actuator/health >/dev/null 2>&1; then
-                echo "✅ Application is ready!"
-                APP_READY=true
-                break
-              fi
-              
-              echo "⏳ Application starting... (${ELAPSED}s/${MAX_WAIT}s)"
-              sleep $WAIT_INTERVAL
-              ELAPSED=$((ELAPSED + WAIT_INTERVAL))
-            done
-            
-            if [ "$APP_READY" = "false" ]; then
-              echo "⚠️  Application did not become ready within ${MAX_WAIT}s"
-              echo "=== Container Logs (last 50 lines) ==="
-              sudo docker logs --tail 50 $CONTAINER_NAME 2>/dev/null || true
-              echo ""
-              echo "⚠️  Deployment completed but application may need more time"
-            else
-              # 최종 헬스 체크
-              echo ""
-              echo "=== Final Health Check ==="
-              HEALTH_RESPONSE=$(curl -s http://localhost:8080/actuator/health 2>&1)
-              HEALTH_EXIT=$?
-              
-              if [ $HEALTH_EXIT -eq 0 ] && [ -n "$HEALTH_RESPONSE" ]; then
-                echo "$HEALTH_RESPONSE"
-              else
-                echo "Health check: curl exit code $HEALTH_EXIT"
-                [ -n "$HEALTH_RESPONSE" ] && echo "$HEALTH_RESPONSE"
-              fi
-              echo ""
-            fi
-            
-            echo "✅ Deployment Complete"
-            # 배포 성공 마커 파일 생성 (나중에 확인용)
-            echo "DEPLOYMENT_SUCCESS=$(date +%s)" > /tmp/deployment_status.txt 2>/dev/null || true
-            
-            # SSH 세션 정상 종료를 위한 짧은 대기
-            sleep 1
-            echo "Script completed successfully"
-            
-            # Explicit success exit (always exit 0 if we reach here)
-            exit 0
+                      # 컨테이너 상태 확인
+                      echo "Waiting for container to initialize..."
+                      sleep 5
 
-      - name: Verify Deployment via Health Check
-        if: always()
-        run: |
-          echo "Checking if deployment actually succeeded..."
-          sleep 15
-          
-          MAX_RETRIES=10
-          for i in $(seq 1 $MAX_RETRIES); do
-            echo "Health check attempt $i/$MAX_RETRIES..."
-            code=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 --max-time 10 http://${{ secrets.EC2_HOST }}:8080/actuator/health 2>/dev/null || echo "000")
-            
-            if [ "$code" = "200" ]; then
-              echo "✅ Deployment verified: Service is healthy!"
-              echo ""
-              echo "=== Service URLs ==="
-              echo "Health: http://${{ secrets.EC2_HOST }}:8080/actuator/health"
-              echo "Docs: http://${{ secrets.EC2_HOST }}:8080/docs"
-              exit 0
-            fi
-            
-            echo "Response code: $code"
-            if [ $i -lt $MAX_RETRIES ]; then
-              sleep 5
-            fi
-          done
-          
-          echo ""
-          echo "⚠️  External health check failed"
-          echo ""
-          echo "=== Troubleshooting Steps ==="
-          echo "1. Check if container is running:"
-          echo "   ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} 'sudo docker ps | grep api-gateway'"
-          echo ""
-          echo "2. Check container logs:"
-          echo "   ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} 'sudo docker logs api-gateway --tail 50'"
-          echo ""
-          echo "3. Check if port is listening:"
-          echo "   ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} 'sudo ss -tulpn | grep :8080'"
-          echo ""
-          echo "4. Check security group:"
-          echo "   - Ensure port 8080 is open for 0.0.0.0/0 (or your IP)"
-          echo "   - AWS Console > EC2 > Security Groups"
-          echo ""
-          if [ "${{ steps.deploy.outcome }}" = "failure" ]; then
-            echo "5. SSH connection had issues, but deployment may have succeeded"
-          fi
+                      if ! sudo docker ps | grep -q $CONTAINER_NAME; then
+                        echo "❌ Container failed to start!"
+                        echo "=== Container Status ==="
+                        sudo docker ps -a | grep $CONTAINER_NAME || true
+                        echo ""
+                        echo "=== Container Logs (last 50 lines) ==="
+                        sudo docker logs --tail 50 $CONTAINER_NAME || true
+                        exit 1
+                      fi
+
+                      echo "✅ Container is running"
+                      echo "=== Container Details ==="
+                      sudo docker ps | grep $CONTAINER_NAME
+                      echo ""
+
+                      # 컨테이너 로그 확인 (애플리케이션 시작 여부)
+                      echo "=== Recent Container Logs ==="
+                      sudo docker logs --tail 20 $CONTAINER_NAME || true
+                      echo ""
+
+                      # 애플리케이션 시작 대기 (최대 60초)
+                      # Disable exit on error for health check loop
+                      set +e
+                      echo "Waiting for application to start..."
+                      MAX_WAIT=60
+                      WAIT_INTERVAL=5
+                      ELAPSED=0
+                      APP_READY=false
+
+                      while [ $ELAPSED -lt $MAX_WAIT ]; do
+                        if curl -s -f -m 3 http://localhost:8080/actuator/health >/dev/null 2>&1; then
+                          echo "✅ Application is ready!"
+                          APP_READY=true
+                          break
+                        fi
+                        
+                        echo "⏳ Application starting... (${ELAPSED}s/${MAX_WAIT}s)"
+                        sleep $WAIT_INTERVAL
+                        ELAPSED=$((ELAPSED + WAIT_INTERVAL))
+                      done
+
+                      if [ "$APP_READY" = "false" ]; then
+                        echo "⚠️  Application did not become ready within ${MAX_WAIT}s"
+                        echo "=== Container Logs (last 50 lines) ==="
+                        sudo docker logs --tail 50 $CONTAINER_NAME 2>/dev/null || true
+                        echo ""
+                        echo "⚠️  Deployment completed but application may need more time"
+                      else
+                        # 최종 헬스 체크
+                        echo ""
+                        echo "=== Final Health Check ==="
+                        HEALTH_RESPONSE=$(curl -s http://localhost:8080/actuator/health 2>&1)
+                        HEALTH_EXIT=$?
+                        
+                        if [ $HEALTH_EXIT -eq 0 ] && [ -n "$HEALTH_RESPONSE" ]; then
+                          echo "$HEALTH_RESPONSE"
+                        else
+                          echo "Health check: curl exit code $HEALTH_EXIT"
+                          [ -n "$HEALTH_RESPONSE" ] && echo "$HEALTH_RESPONSE"
+                        fi
+                        echo ""
+                      fi
+
+                      echo "✅ Deployment Complete"
+                      # 배포 성공 마커 파일 생성 (나중에 확인용)
+                      echo "DEPLOYMENT_SUCCESS=$(date +%s)" > /tmp/deployment_status.txt 2>/dev/null || true
+
+                      # SSH 세션 정상 종료를 위한 짧은 대기
+                      sleep 1
+                      echo "Script completed successfully"
+
+                      # Explicit success exit (always exit 0 if we reach here)
+                      exit 0
+
+            - name: Verify Deployment via Health Check
+              if: always()
+              run: |
+                  echo "Checking if deployment actually succeeded..."
+                  sleep 15
+
+                  MAX_RETRIES=10
+                  for i in $(seq 1 $MAX_RETRIES); do
+                    echo "Health check attempt $i/$MAX_RETRIES..."
+                    code=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 --max-time 10 http://${{ secrets.EC2_HOST }}:8080/actuator/health 2>/dev/null || echo "000")
+                    
+                    if [ "$code" = "200" ]; then
+                      echo "✅ Deployment verified: Service is healthy!"
+                      echo ""
+                      echo "=== Service URLs ==="
+                      echo "Health: http://${{ secrets.EC2_HOST }}:8080/actuator/health"
+                      echo "Docs: http://${{ secrets.EC2_HOST }}:8080/docs"
+                      exit 0
+                    fi
+                    
+                    echo "Response code: $code"
+                    if [ $i -lt $MAX_RETRIES ]; then
+                      sleep 5
+                    fi
+                  done
+
+                  echo ""
+                  echo "⚠️  External health check failed"
+                  echo ""
+                  echo "=== Troubleshooting Steps ==="
+                  echo "1. Check if container is running:"
+                  echo "   ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} 'sudo docker ps | grep labzang-api'"
+                  echo ""
+                  echo "2. Check container logs:"
+                  echo "   ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} 'sudo docker logs labzang-api --tail 50'"
+                  echo ""
+                  echo "3. Check if port is listening:"
+                  echo "   ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} 'sudo ss -tulpn | grep :8080'"
+                  echo ""
+                  echo "4. Check security group:"
+                  echo "   - Ensure port 8080 is open for 0.0.0.0/0 (or your IP)"
+                  echo "   - AWS Console > EC2 > Security Groups"
+                  echo ""
+                  if [ "${{ steps.deploy.outcome }}" = "failure" ]; then
+                    echo "5. SSH connection had issues, but deployment may have succeeded"
+                  fi
