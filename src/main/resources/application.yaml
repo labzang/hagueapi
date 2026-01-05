@@ -1,123 +1,90 @@
-spring:
-  application:
-    name: labzang-api
-  # docker builder prune -f
-  # docker build -t labzang-api .
-  # docker run -p 8080:8080 labzang-api:latest
-  # 깃허브액션을 실행하기 위한 변화 12:47
+name: Build, Push, Deploy (API)
 
-  # 데이터베이스 설정 (Neon PostgreSQL)
-  datasource:
-    url: ${SPRING_DATASOURCE_URL}
-    username: ${SPRING_DATASOURCE_USERNAME}
-    password: ${SPRING_DATASOURCE_PASSWORD}
-    driver-class-name: org.postgresql.Driver
-    hikari:
-      maximum-pool-size: 10
-      minimum-idle: 2
-      connection-timeout: 30000
-      idle-timeout: 600000
-      max-lifetime: 1800000
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
 
-  # JPA/Hibernate 설정
-  jpa:
-    hibernate:
-      ddl-auto: update
-      naming:
-        physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
-    show-sql: true
-    properties:
-      hibernate:
-        dialect: org.hibernate.dialect.PostgreSQLDialect
-        format_sql: true
-        jdbc:
-          time_zone: Asia/Seoul
+env:
+  IMAGE_NAME: pakjkwan/labzang-api
+  CONTAINER_NAME: labzang-api
+  HOST_PORT: "8080"
+  CONTAINER_PORT: "8080"
+  # ✅ EC2에 이미 존재하는 .env 파일 경로로 바꾸세요
+  ENV_FILE_PATH: /home/ubuntu/api/.env
 
-  # Redis 설정 (Upstash Redis)
-  data:
-    redis:
-      host: ${UPSTASH_REDIS_HOST}
-      port: ${UPSTASH_REDIS_PORT:6379}
-      password: ${UPSTASH_REDIS_PASSWORD}
-      ssl:
-        enabled: true
-      timeout: 2000ms
-      database: 0
-      lettuce:
-        pool:
-          max-active: 8
-          max-idle: 8
-          min-idle: 0
-        ssl:
-          enabled: true
-          verify-peer: true
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
 
-  # WebMVC CORS 설정 (모놀리식 구조)
-  web:
-    cors:
-      allowed-origins:
-        - "${FRONTEND_URL:http://localhost:3000}"
-      allowed-methods:
-        - GET
-        - POST
-        - PUT
-        - DELETE
-        - OPTIONS
-        - PATCH
-      allowed-headers: "*"
-      allow-credentials: true
-      max-age: 3600
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
 
-springdoc:
-  api-docs:
-    path: /v3/api-docs
-  swagger-ui:
-    path: /docs
-    enabled: true
-    operations-sorter: method
-    tags-sorter: alpha
-    use-root-path: false
-    persist-authorization: true
-  show-actuator: false
-  default-flat-param-object: true
-  writer-with-order-by-keys: true
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-server:
-  port: 8080
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-# JWT 설정
-jwt:
-  secret: ${JWT_SECRET}
-  access-token-expiration: ${JWT_ACCESS_TOKEN_EXPIRATION:3600000}
-  refresh-token-expiration: ${JWT_REFRESH_TOKEN_EXPIRATION:2592000000}
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
 
-# OAuth 설정
-oauth:
-  google:
-    client-id: ${GOOGLE_CLIENT_ID}
-    client-secret: ${GOOGLE_CLIENT_SECRET}
-    redirect-uri: ${GOOGLE_REDIRECT_URI}
-  kakao:
-    rest-api-key: ${KAKAO_REST_API_KEY}
-    redirect-uri: ${KAKAO_REDIRECT_URI}
+  deploy-to-ec2:
+    needs: build-and-push
+    runs-on: ubuntu-latest
 
-# Google OAuth 설정 (GoogleOAuthService용)
-google:
-  client-id: ${GOOGLE_CLIENT_ID}
-  client-secret: ${GOOGLE_CLIENT_SECRET}
-  redirect-uri: ${GOOGLE_REDIRECT_URI:http://localhost:8080/api/auth/google/callback}
+    steps:
+      - name: Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
 
-# Kakao OAuth 설정 (KakaoOAuthService, KakaoProperties용)
-kakao:
-  rest-api-key: ${KAKAO_REST_API_KEY}
-  redirect-uri: ${KAKAO_REDIRECT_URI:http://localhost:8080/api/auth/kakao/callback}
-  client-secret: ""
+            IMAGE="${{ env.IMAGE_NAME }}:latest"
+            CONTAINER="${{ env.CONTAINER_NAME }}"
+            HOST_PORT="${{ env.HOST_PORT }}"
+            CONTAINER_PORT="${{ env.CONTAINER_PORT }}"
+            ENV_FILE="${{ env.ENV_FILE_PATH }}"
 
-logging:
-  level:
-    com.labzang: INFO
-    org.springframework.web: DEBUG
-    org.springframework.security: DEBUG
-    org.hibernate.SQL: DEBUG
-  pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+            echo "==> Checking env file: $ENV_FILE"
+            if [ ! -f "$ENV_FILE" ]; then
+              echo "ERROR: .env file not found at $ENV_FILE"
+              exit 1
+            fi
+
+            echo "==> Pulling latest image: $IMAGE"
+            docker pull "$IMAGE"
+
+            echo "==> Stopping/removing existing container (if any): $CONTAINER"
+            docker stop "$CONTAINER" >/dev/null 2>&1 || true
+            docker rm "$CONTAINER" >/dev/null 2>&1 || true
+
+            echo "==> Running new container with env-file"
+            docker run -d --name "$CONTAINER" \
+              --restart unless-stopped \
+              --env-file "$ENV_FILE" \
+              -p "${HOST_PORT}:${CONTAINER_PORT}" \
+              "$IMAGE"
+
+            echo "==> Cleanup unused images"
+            docker image prune -f
+
+            echo "==> Health check (container status)"
+            docker ps --filter "name=$CONTAINER"
+            echo "==> Recent logs"
+            docker logs "$CONTAINER" --tail 80 || true
