@@ -13,5 +13,6 @@ import lombok.Setter;
 public class JwtProperties {
     private String secret;
     private Long expiration = 86400000L; // 기본 24시간
+    // 깃허브액션을 실행하기 위한 변화 15:10
 }
 
