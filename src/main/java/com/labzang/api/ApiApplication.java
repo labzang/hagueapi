@@ -2,7 +2,7 @@ package com.labzang.api;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-
+// 깃허브액션을 실행하기 위한 변화 14:17
 /**
  * @author Labzang Team
  *         Labzang API - 모놀리식 Spring Boot 애플리케이션
